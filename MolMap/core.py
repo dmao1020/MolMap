@@ -17,12 +17,13 @@ class pubchem_MolMap:
             qm9_atom_df,
             atom_pdf_dict,
             extractor = None, 
-            prop_n = "gap",
+            prop_n = "alpha_gap",
             target_prop_val = None,
             atom_list = None,
             top_ranks=2,
             GC_tau1 = None, 
-            GC_tau2 = None
+            GC_tau2 = None,
+            kcalmol_stat = True,
 
     ):
         self.extractor = extractor
@@ -36,6 +37,12 @@ class pubchem_MolMap:
         # Descriptor utils
         self.GC_tau1 = GC_tau1
         self.GC_tau2 = GC_tau2
+        self.kcalmol_stat = kcalmol_stat
+        # Derive conversion constant from Hartree to kcal/mol
+        if self.kcalmol_stat:
+            self.hartree2kcalmol_constant = return_hartree2kcalmol_constant(self.prop_n)
+        else:
+            self.hartree2kcalmol_constant = 1
 
     def ChemFormula(self, probe_pt_des_dict):
         atom_guess_dict = {}
@@ -51,7 +58,13 @@ class pubchem_MolMap:
             else:
                 atom_guess_dict[atom_i] = [count_guess_prob[-1]]
         return atom_guess_dict
-    
+    def return_pubchem_property(self, d):
+        if self.prop_n == "alpha_gap":
+            return d.alpha_gap
+        elif self.prop_n == "E_total":
+            return d.energy_total
+        else:
+            raise ValueError(f"Unsupported property name: {self.prop_n}")
     def Des2MolMap(self,probe_pt_des_dict):
 
         atom_guess_dict = self.ChemFormula(probe_pt_des_dict)
@@ -76,7 +89,7 @@ class pubchem_MolMap:
                 continue
 
         smiles_ls = []
-        cardidate_arr = []
+        
         if len(CID_ls) > 0:
             print (f"CID_ls: {CID_ls}")
             smiles_ls += [pcp.Compound.from_cid(cid_i).canonical_smiles for cid_i in CID_ls]
@@ -94,7 +107,8 @@ class pubchem_MolMap:
                     self.best_smiles = "None"
                 else:
                     print (f"dataset: {dataset}")
-                    
+                    candidate_ls = []
+                    candidate_dict = {}
                     for d in dataset:
                         des_dict = {}
                         # print(f"  - CID: {d.cid}, SMILES: {d.smiles}, charge: {d.charge}")
@@ -118,19 +132,54 @@ class pubchem_MolMap:
                         for i, atom in enumerate(self.atom_list):
                             des_dict["in_prod_f%s_fi"%(atom)] = float(f_atom[i])
                         print (f"des_dict: {des_dict}")
+                        candidate_ls.append(list(des_dict.values()))
+                        candidate_dict[d.smiles] = [des_dict, self.return_pubchem_property(d)]
+
+
                         # TODO code cadidate _ls and cadidate_dict
                         # TODO find best candidate and fill up self.abs_err, self.best_des_dict, self.remain_qm9_des_prop_dict, self.composition_guess, self.best_smiles
+                    
+                    candidate_arr = np.array(candidate_ls)
+                    print (f"candidate_arr shape: {np.shape(candidate_arr)[0]}")
 
                     target_val_vector = list(probe_pt_des_dict.values())#list(target_point.values())
+                    if np.shape(candidate_arr)[0] != 0:
+                        tree = scipy.spatial.KDTree(candidate_arr)
+                        min_dist, min_idx =  tree.query(target_val_vector)
+                        self.min_dist = min_dist
+                        self.min_idx = min_idx
+                        print ("min_dist:", min_dist)
+                        print ("min_dist:", min_idx)
+                        print ("cadidate_arr[min_idx,:]", candidate_arr[min_idx,:])
+                        test_dist = math.dist(candidate_arr[min_idx,:],target_val_vector)
+                        print (f"test_dist: {test_dist}")
+                        best_smiles = list(candidate_dict.keys())[self.min_idx]
+                        best_des_dict = candidate_dict[best_smiles][0]
+                        best_prop = candidate_dict[best_smiles][1]
+                        
+                        # print (f"best_prop: {best_prop}, hartree2kcalmol_constant:{self.hartree2kcalmol_constant}")
+                        # print (f"self.target_prop_val: {self.target_prop_val}")
+                        abs_err = abs(best_prop*self.hartree2kcalmol_constant-self.target_prop_val*self.hartree2kcalmol_constant)
+                        self.abs_err = abs_err
+                        self.best_des_dict = best_des_dict
+                        self.composition_guess = all_combinations
+                        self.best_smiles = best_smiles
+                    else:
+                        print ("No Candidate")
+                        self.abs_err = self.max_abs_err
+                        self.best_des_dict = probe_pt_des_dict
+                        self.composition_guess = all_combinations
+                        self.best_smiles = "None"
+
             
-        if cardidate_arr == []:
-            print ("No compounds found for the given formulas.")
-            # print ("No Candidate")
-            self.abs_err = self.max_abs_err
-            self.best_des_dict = probe_pt_des_dict
-            # self.remain_qm9_des_prop_dict = remain_qm9_des_prop_dict
-            self.composition_guess = all_combinations
-            self.best_smiles = "None"
+        # if cardidate_arr == []:
+        #     print ("No compounds found for the given formulas.")
+        #     # print ("No Candidate")
+        #     self.abs_err = self.max_abs_err
+        #     self.best_des_dict = probe_pt_des_dict
+        #     # self.remain_qm9_des_prop_dict = remain_qm9_des_prop_dict
+        #     self.composition_guess = all_combinations
+        #     self.best_smiles = "None"
 
 
         # for comb_i in all_combinations:
