@@ -3,6 +3,11 @@ from .atom_pdf import atom_pdf
 from MolDes import GCT_util, CM_util # importing MolDes package
 import matplotlib.pyplot as plt
 import math
+import rdkit
+from rdkit import Chem
+from rdkit.Chem import AllChem
+from rdkit.Chem import Draw
+from rdkit.Chem import rdMolDescriptors
 
 atomic_weight_dict = {
     "H": 1.008,
@@ -19,6 +24,20 @@ atomic_weight_dict = {
     "Si": 28.085
 }
 
+atomic_Z_dict = {
+    "H": 1,
+    "C": 6,
+    "N": 7,
+    "O": 8,
+    "F": 9,
+    "P": 15,
+    "S": 16,
+    "Cl": 17,
+    "Br": 35,
+    "I": 53,
+    "B": 5,
+    "Si": 14
+}
 def solve_n_for_alkane(target: float = 300.0):
     mw_C, mw_H = atomic_weight_dict["C"], atomic_weight_dict["H"]
     # f(n) = n*mw_C + (2n+2)*mw_H = n*(mw_C + 2*mw_H) + 2*mw_H
@@ -67,7 +86,6 @@ def max_atom_counts(
     """
     estmated_max_counts = {}
     # print (estmated_max_counts)
-
     for atom_type in atomic_ls:
         atomic_weight = atomic_weight_dict[atom_type]
         if atom_type == "C": 
@@ -100,13 +118,68 @@ def max_atom_counts(
         else:
             print (f"Atom type {atom_type} not specifically handled, using a general estimate based on atomic weight.")
     return estmated_max_counts
-from rdkit import Chem
-from rdkit.Chem import AllChem, rdMolDescriptors, Draw
-def alkane_cm(n_carbon):
-    # 1. Create molecule object from SMILES
 
-    smiles = "C" * n_carbon
-    print (f"SMILES for alkane with {n_carbon} carbon atoms: {smiles}")
+def max_cm_est(n_heavy_atoms = 9,
+              atom_ls = ["H", "C", "N", "O", "F"],
+              ref_type = "alkane" # can be "alkane" or "ring"
+              ):
+    Z_max = 0
+    for atom in atom_ls:
+        if atomic_Z_dict[atom] > Z_max:
+            Z_max_atom = atom
+
+    # 1. Create molecule object from SMILES
+    if n_heavy_atoms == 1:
+        smiles = "C"
+    elif n_heavy_atoms == 2:
+        smiles = f"C{Z_max_atom}"
+    elif n_heavy_atoms == 3:
+        smiles = f"C({Z_max_atom})({Z_max_atom})"
+    elif n_heavy_atoms == 4:
+        smiles = f"{Z_max_atom}C({Z_max_atom}){Z_max_atom}"
+    elif n_heavy_atoms == 6:
+        smiles = f"C({Z_max_atom})({Z_max_atom})C({Z_max_atom})({Z_max_atom})"
+    
+    else:
+        if ref_type == "alkane":
+            # smiles = "C" * n_carbon
+            # print (f"SMILES for alkane with {n_carbon} carbon atoms: {smiles}")
+            n_carbons_remaining = n_heavy_atoms-6
+            smiles = f"C({Z_max_atom})({Z_max_atom})"
+            if n_carbons_remaining == 1:
+                smiles += "C"
+            elif n_carbons_remaining == 2:
+                smiles += f"C({Z_max_atom})"
+            elif n_carbons_remaining >= 3:
+                n_cf2 = math.floor(n_carbons_remaining / 3)
+                for i in range(n_cf2):
+                    smiles += f"C({Z_max_atom})({Z_max_atom})"
+                if n_carbons_remaining % 3 == 1:
+                    smiles += "C"
+                elif n_carbons_remaining % 3 == 2:
+                    smiles += f"C({Z_max_atom})"
+            smiles += f"C({Z_max_atom})({Z_max_atom})"
+        elif ref_type == "ring":
+            if n_heavy_atoms == 5:
+                smiles = f"C1({Z_max_atom})CC1({Z_max_atom})"
+            else:
+                n_carbons_remaining = n_heavy_atoms-6
+                smiles = f"C1({Z_max_atom})({Z_max_atom})"
+                if n_carbons_remaining == 1:
+                    smiles += "C"
+                elif n_carbons_remaining == 2:
+                    smiles += f"C({Z_max_atom})"
+                elif n_carbons_remaining >= 3:
+                    n_cf2 = math.floor(n_carbons_remaining / 3)
+                    for i in range(n_cf2):
+                        smiles += f"C({Z_max_atom})({Z_max_atom})"
+                    if n_carbons_remaining % 3 == 1:
+                        smiles += "C"
+                    elif n_carbons_remaining % 3 == 2:
+                        smiles += f"C({Z_max_atom})"
+                smiles += f"C1({Z_max_atom})({Z_max_atom})"
+            
+    print (f"SMILES for with {n_heavy_atoms} heavy atoms: {smiles}")
     mol = Chem.MolFromSmiles(smiles)
 
     # 2. Add Hydrogens (crucial for accurate Coulomb interactions)
@@ -125,7 +198,8 @@ def alkane_cm(n_carbon):
     # 5. Calculate the Coulomb Matrix
     # This returns a list of matrices (one for each conformer)
     coulomb_matrices = rdMolDescriptors.CalcCoulombMat(mol)
-
+    print (type(coulomb_matrices))
+    print (f"Number of CMs generated: {len(coulomb_matrices)}")
     # Access the first matrix
     cm = list(coulomb_matrices[0])
     return coulomb_matrices
@@ -139,7 +213,8 @@ def boundary_calc(
         atom_var: float = 0.5,
         atom_ls: list = ["H", "C", "N", "O", "F"],
         data_atom_dict: dict = {"H":[1, 20], "C":[0, 9], "N":[0, 9], "O":[0, 9], "F":[0, 9]},
-        max_MW: float = 300.0
+        max_MW: float = 300.0,
+        ref_type: str = "ring"
 ):
     """Calculate the boundary of the cumulative distribution function for each atom type and number of atoms. 
     This is used to determine the range of the cumulative distribution function for each atom type and number of atoms, which is then used to calculate the molecular descriptor.
@@ -155,7 +230,7 @@ def boundary_calc(
             x = x,
             cum_pdf_norm_stat = norm_stat,
             atom_var = atom_var,
-            atom_ls = atom_ls
+            atom_ls = atom_ls,
         )
     atom_dict = GCT_des_util.f_atom_calc()
     boundary_dict = {}
@@ -221,8 +296,15 @@ def boundary_calc(
     print (f"alkene_cum_pdf stats: {auc}")
     boundary_dict["auc_mij_sq"] = [0, auc]
 
-    # cm_ev1 = 
-
+    max_cm = max_cm_est(n_heavy_atoms = math.ceil(max_MW/atomic_weight_dict["C"]),
+                        atom_ls = atom_ls,
+                        ref_type = ref_type)
+    v = np.linalg.eigvals(max_cm)
+    max_const = 1.2
+    cm_ev1, cm_mu, cm_sigma = np.max(v) * max_const, np.mean(v) * max_const, np.std(v) * max_const
+    boundary_dict["cm_ev1"] = [0, cm_ev1]
+    boundary_dict["cm_mu"] = [0, cm_mu]
+    boundary_dict["cm_sigma"] = [0, cm_sigma]
 
 
     # print (f"Boundary dict: {boundary_dict}")
