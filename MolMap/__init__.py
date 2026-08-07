@@ -6,6 +6,7 @@ from .utils import dict_merge
 from .config import DEFAULT_CONFIG
 from .boundary import boundary_calc
 from .atom_pdf import atom_pdf, normalPdf, mu_calc
+from .mapping import MolMap
 
 __all__ = [
     "MolMap",

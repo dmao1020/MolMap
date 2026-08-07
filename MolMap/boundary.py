@@ -267,7 +267,7 @@ def boundary_calc(
                 # ax.legend()
                 # plt.show()
                 # print (f"Descriptor value for {n_atoms} {atom_type} atoms: {des_val}")
-                boundary_dict[atom_type].append(des_val)
+                boundary_dict[atom_type].append(math.ceil(des_val))
         # print ("\n")
         
     # Estimate the upper descriptor boundary for the AUC descriptor with the larget alkene
@@ -294,7 +294,7 @@ def boundary_calc(
         )
     auc =  np.trapezoid(alkene_cum_pdf, dx=1)
     print (f"alkene_cum_pdf stats: {auc}")
-    boundary_dict["auc_mij_sq"] = [0, auc]
+    boundary_dict["auc_mij_sq"] = [0, math.ceil(auc)]
 
     max_cm = max_cm_est(n_heavy_atoms = math.ceil(max_MW/atomic_weight_dict["C"]),
                         atom_ls = atom_ls,
@@ -302,10 +302,67 @@ def boundary_calc(
     v = np.linalg.eigvals(max_cm)
     max_const = 1.2
     cm_ev1, cm_mu, cm_sigma = np.max(v) * max_const, np.mean(v) * max_const, np.std(v) * max_const
-    boundary_dict["cm_ev1"] = [0, cm_ev1]
-    boundary_dict["cm_mu"] = [0, cm_mu]
-    boundary_dict["cm_sigma"] = [0, cm_sigma]
+    boundary_dict["cm_ev1"] = [0, math.ceil(cm_ev1)]
+    boundary_dict["cm_mu"] = [0, math.ceil(cm_mu)]
+    boundary_dict["cm_sigma"] = [0, math.ceil(cm_sigma)]
 
 
     # print (f"Boundary dict: {boundary_dict}")
     return boundary_dict
+
+def atom_cum_pdf_calc(
+        di: float = 10, 
+        mu_power: float = 1, 
+        var_power: float = 1, 
+        x = np.linspace(-100, 300, 400),
+        norm_stat: bool = False,
+        atom_var: float = 0.5,
+        atom_ls: list = ["H", "C", "N", "O", "F"],
+        max_MW: float = 300.0,
+    ):
+    """
+
+    Returns:
+    """
+    GCT_des_util = GCT_util.GCT_util(
+            mu_power = mu_power,
+            var_power = var_power,
+            di = di,
+            x = x,
+            cum_pdf_norm_stat = norm_stat,
+            atom_var = atom_var,
+            atom_ls = atom_ls,
+        )
+    
+    max_counts = max_atom_counts(max_MW=max_MW, atomic_ls=atom_ls)
+
+    atom_dict = GCT_des_util.f_atom_calc()
+    atom_cum_pdf_dict = {"atom_type": [], "atom_count": [], "f_atom_inner_prod": [], "cum_pdf": []}
+    for atom_type, n_atoms_range in max_counts.items():
+        # print (f"Calculating boundary for atom type: {atom_type}")
+        # atom_cum_pdf_dict[atom_type] = []
+        for n_atoms in range(n_atoms_range+1):
+            atom_cum_pdf_dict["atom_count"].append(n_atoms)
+            atom_cum_pdf_dict["atom_type"].append(atom_type)
+            if n_atoms == 0:
+                atom_cum_pdf_dict["f_atom_inner_prod"].append(0)
+                atom_cum_pdf_dict["cum_pdf"].append(0)
+            else:
+                # print (f"Calculating boundary for {n_atoms} {atom_type} atoms")
+                pdf, pdf_stats = atom_pdf(
+                    atom_type=atom_type,
+                    n_atoms=n_atoms, # nu
+                    # mol_size = 30,
+                    di = di,
+                    mu_power = mu_power,
+                    var_power = var_power,
+                    x=x,
+                    norm_stat = norm_stat
+                )
+                atom_cum_pdf_dict["cum_pdf"].append(pdf)
+
+                inner_prod = np.inner(atom_dict[atom_type], pdf)
+                atom_cum_pdf_dict["f_atom_inner_prod"].append(inner_prod)
+    return atom_cum_pdf_dict
+
+

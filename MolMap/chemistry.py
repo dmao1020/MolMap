@@ -34,7 +34,15 @@ def return_hartree2kcalmol_constant(prop_n):
         return 627.509474*298.15
     else:
         return 627.509474
-
+    
+def return_kcalmol(unit):
+    if unit == "hartree":
+        return 627.509474
+    elif unit == "hartree_K":
+        return 627.509474*298.15
+    elif unit == "eV":
+        return 23.06031
+    
 def Coulomb_matrix(coord_array, z_ls):
     num_atoms = len(z_ls)
     CM = np.zeros((num_atoms, num_atoms))
