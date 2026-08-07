@@ -1,4 +1,4 @@
-# MolMap Refactoring Summary
+# MolMap Package Summary
 
 ## Overview
 Successfully refactored monolithic `MolMap.py` into a proper Python package with proper module separation and pip-installable structure.
