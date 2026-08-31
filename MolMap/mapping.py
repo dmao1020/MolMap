@@ -7,7 +7,7 @@ from numpy import linalg as LA
 #import numexpr as ne
 import os
 import scipy
-from bayes_opt import BayesianOptimization 
+# from bayes_opt import BayesianOptimization 
 # from bayes_opt import UtilityFunction
 import pandas as pd
 

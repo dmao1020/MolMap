@@ -1,7 +1,7 @@
 import numpy as np
 from .atom_pdf import atom_pdf
 from MolDes import GCT_util, CM_util # importing MolDes package
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import math
 import rdkit
 from rdkit import Chem
