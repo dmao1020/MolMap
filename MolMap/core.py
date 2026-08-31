@@ -52,7 +52,6 @@ class pubchem_MolMap:
                                                      des_val,
                                                      self.atom_pdf_dict,
                                                      sigma=4)
-            # print (f"guess {count_guess_prob} {atom_i}s, <f_{atom_i}, f_i>: {round(des_val, 2)}; \n")
             if atom_i == "C" or atom_i == "H":
                 atom_guess_dict[atom_i] = [count_guess_prob[-(rank+1)] for rank in range(self.top_ranks)]
             else:
@@ -99,10 +98,8 @@ class pubchem_MolMap:
                 dataset = self.extractor.extract_batch(CID_ls)
                 if len(dataset) == 0:
                     print ("No compounds found for the given formulas.")
-                    # print ("No Candidate")
                     self.abs_err = self.max_abs_err
                     self.best_des_dict = probe_pt_des_dict
-                    # self.remain_qm9_des_prop_dict = remain_qm9_des_prop_dict
                     self.composition_guess = all_combinations
                     self.best_smiles = "None"
                 else:
@@ -111,14 +108,12 @@ class pubchem_MolMap:
                     candidate_dict = {}
                     for d in dataset:
                         des_dict = {}
-                        # print(f"  - CID: {d.cid}, SMILES: {d.smiles}, charge: {d.charge}")
-                        # print (f"Properties: \n  Energy: {d.energy_total}, Total Dipole Moment: {d.total_dipole_moment}, \n  Molecular Weight: {d.molecular_weight}")
+                        # Extract coordinates and element information
                         coord_array = np.array(d.coords)
                         element = d.elements
                         z_ls = element["number"]
                         CM = Coulomb_matrix(coord_array, z_ls)
-                        # print (f"coordinates: {coord_array}, z_ls: {z_ls}")
-                        # print (f"Coulomb Matrix: {CM}")
+                
                         # calculate descriptors
                         # Coulomb matrix eigenvalue spectrum
                         CM_w, CM_v = np.linalg.eig(CM)
@@ -135,10 +130,6 @@ class pubchem_MolMap:
                         candidate_ls.append(list(des_dict.values()))
                         candidate_dict[d.smiles] = [des_dict, self.return_pubchem_property(d)]
 
-
-                        # TODO code cadidate _ls and cadidate_dict
-                        # TODO find best candidate and fill up self.abs_err, self.best_des_dict, self.remain_qm9_des_prop_dict, self.composition_guess, self.best_smiles
-                    
                     candidate_arr = np.array(candidate_ls)
                     print (f"candidate_arr shape: {np.shape(candidate_arr)[0]}")
 
@@ -156,9 +147,7 @@ class pubchem_MolMap:
                         best_smiles = list(candidate_dict.keys())[self.min_idx]
                         best_des_dict = candidate_dict[best_smiles][0]
                         best_prop = candidate_dict[best_smiles][1]
-                        
-                        # print (f"best_prop: {best_prop}, hartree2kcalmol_constant:{self.hartree2kcalmol_constant}")
-                        # print (f"self.target_prop_val: {self.target_prop_val}")
+
                         abs_err = abs(best_prop*self.hartree2kcalmol_constant-self.target_prop_val*self.hartree2kcalmol_constant)
                         self.abs_err = abs_err
                         self.best_des_dict = best_des_dict
