@@ -32,4 +32,4 @@ To install the required dependencies:
 The Bayesian optimization scripts perform the optimization of the molecular properties considered in the manuscript
 - Entropy
 - ZPVE
-- Normalized electronic energy (E_{\mathrm{elec, n}})
+- Normalized electronic energy ($E_{\mathrm{elec, n}}$)
