@@ -1,62 +1,21 @@
-
 import math
 import time
 import random
 import numpy as np
 from numpy import linalg as LA
-#import numexpr as ne
 import os
-import scipy
-# from bayes_opt import BayesianOptimization 
-# from bayes_opt import UtilityFunction
-import pandas as pd
-
-# rdkit library and functions
+from bayes_opt import BayesianOptimization
 import rdkit
 from rdkit import Chem
-# from rdkit.Chem.Draw import IPythonConsole
-# from rdkit.Chem import Draw
-# from rdkit.Chem.Scaffolds import MurckoScaffold
-# from rdkit.Chem.rdMolDescriptors import CalcMolFormula
-
+import scipy
 from scipy.spatial import distance
-from .chemistry import return_hartree2kcalmol_constant, return_kcalmol
+from .chemistry import return_kcalmol
 from .boundary import atom_cum_pdf_calc
 from collections import defaultdict
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors
-
 import re
-
-# import pubchempy as pcp
-
-# def pubchem_get_compounds_with_retry(identifier, namespace, max_retries=3, base_delay=1.0, max_delay=16.0, **kwargs):
-#     """Query PubChem with exponential backoff and per-attempt error handling."""
-#     last_error = None
-#     for attempt in range(max_retries):
-#         try:
-#             return pcp.get_compounds(identifier, namespace, **kwargs)
-#         except Exception as exc:
-#             last_error = exc
-#             wait_s = min(max_delay, base_delay * (2 ** attempt))
-#             print(
-#                 f"PubChem query failed for {namespace}={identifier!r} on attempt {attempt + 1}/{max_retries}: {exc}"
-#             )
-#             if attempt < max_retries - 1:
-#                 time.sleep(wait_s)
-#     print(f"PubChem query exhausted retries for {namespace}={identifier!r}")
-#     return []
-
-
-# def find_cid_from_smiles(smi, method = "pubchem"):
-#     results = pubchem_get_compounds_with_retry(smi, "smiles")
-#     if results:
-#         return results
-#     print("No compound found.")
-#     return None
-
-
-
+import itertools
 class MolMap():
     def __init__(self,
                  GC_param_dict= {
@@ -72,25 +31,35 @@ class MolMap():
                 target_prop_val = None, 
                 kcalmol_stat = True,
                 max_abs_err = 100,
-                # remain_qm9_des_prop_df = None,
-                # remain_qm9_des_prop_dict = None,
                 top_ranks = 2,
                 max_MW = 300.0,
                 max_cid = 4000000,
-                unit = "eV"
+                unit = "hartree"
         ):
+        """
+        Initialize the MolMap class with parameters for molecular mapping and optimization.
+
+        Parameters:
+        - GC_param_dict: Dictionary containing parameters for the Gershgorin circle theorem descriptor.
+        - atom_ls: List of atom types to consider (default: ["H", "C", "N", "O", "F"]).
+        - prop_n: Property name to optimize (default: "s").
+        - target_prop_val: Target property value for optimization.
+        - kcalmol_stat: Boolean indicating whether to convert output from Hartree to kcal/mol (default: True).
+        - max_abs_err: Maximum absolute error for chemically invalid molecular structures (default: 100).
+        - top_ranks: Number of top ranks to consider for atom count guesses (default: 2).
+        - max_MW: Maximum molecular weight to consider (default: 300.0).
+        - max_cid: Maximum compound ID to consider (default: 4000000).
+        - unit: Unit of energy to use (default: "Hartree").
+        """
         # BO suggested point
         # Descriptor in a dictionary
-        self.kcalmol_stat = kcalmol_stat # whether to convert output from Hartree to kcal/mol
-        self.GC_param_dict = GC_param_dict # Gershgorin circle theorem descriptor parameter dictionary
-        self.max_abs_err = max_abs_err # Maximum absolute error for chemically invalid molecular structure
+        self.kcalmol_stat = kcalmol_stat
+        self.GC_param_dict = GC_param_dict
+        self.max_abs_err = max_abs_err
         self.prop_n = prop_n
         self.target_prop_val = target_prop_val
-        # self.remain_qm9_des_prop_df = remain_qm9_des_prop_df
-        # self.remain_qm9_des_prop_dict = remain_qm9_des_prop_dict
         self.top_ranks = top_ranks
         self.atom_ls = atom_ls
-        # self.atom_count_keys = ["%s_count"%atom_i for atom_i in self.atom_ls]
         self.atom_count_keys = [f"{atom_i}" for atom_i in self.atom_ls]
         self.max_MW = max_MW
         self.max_cid = max_cid
@@ -99,9 +68,9 @@ class MolMap():
         # Derive constant that converts the energy unit
         # from Hartree to kcal/mol
         if self.kcalmol_stat == True:
-            self.hartree2kcalmol_constant = return_kcalmol(self.unit)
+            self.kcalmol_constant = return_kcalmol(self.unit)
         else:
-            self.hartree2kcalmol_constant = 1
+            self.kcalmol_constant = 1
 
         
         """Dictionary summary 
@@ -122,22 +91,43 @@ class MolMap():
         )  
     
 
-    def ChemFormula(self, probe_pt_des_dict):
+    def ChemFormula(
+            self, 
+            probe_pt_des_dict
+            ):
+        """
+        Generate a chemical formula based on the descriptor dictionary.
+
+        Args:
+            probe_pt_des_dict (dict): The descriptor dictionary.
+
+        Returns:
+            dict: The generated chemical formula.
+        """
         atom_guess_dict = {}
         for i, atom_i in enumerate(self.atom_ls):
             des_val = probe_pt_des_dict['in_prod_f%s_fi'%(atom_i)]
             count_guess_prob, prob = self.prob_atom_count(atom_type = atom_i, 
                                                           value = des_val,
                                                           sigma=4)
-            # print (f"guess {count_guess_prob} {atom_i}s, <f_{atom_i}, f_i>: {round(des_val, 2)}; \n")
             if atom_i == "C" or atom_i == "H":
                 atom_guess_dict[atom_i] = [count_guess_prob[-(rank+1)] for rank in range(self.top_ranks)]
             else:
                 atom_guess_dict[atom_i] = [count_guess_prob[-1]]
-        print ("atom_guess_dict:", atom_guess_dict)
         return atom_guess_dict
     
-    def find_cid_from_formula(self, target_formula):
+    def find_cid_from_formula(
+            self, 
+            target_formula
+            ):
+        """Find CID (Compound Identification number) from the chemical formula.
+
+        Args:
+            target_formula (str): The chemical formula.
+
+        Returns:
+            list: a list of SMILES strings corresponding to the target chemical formula.
+        """
         formula_idx = [idx for idx, val_i in enumerate(self.remain_des_prop_dict.values()) if val_i[-1] == target_formula]
         remain_smi_ls = list(self.remain_des_prop_dict.keys())
         if len(formula_idx) > 0:
@@ -146,10 +136,17 @@ class MolMap():
         else:
             return []
     
-    def generate_hill_formula(self, atom_counts):
+    def generate_hill_formula(
+            self, 
+            atom_counts
+            ):
         """
-        atom_counts: dict like {'H':2, 'C':1, 'N':6, 'O':4}
-        Returns Hill-system formula string, e.g. 'CH2N6O4'
+        Generate a Hill-system chemical formula string from atom counts.
+        
+        Args:
+            atom_counts (dict): dict like {'H':2, 'C':1, 'N':6, 'O':4}
+        Returns: 
+            str: Hill-system formula string, e.g. 'CH2N6O4'
         """
         parts = []
         if atom_counts.get('C', 0) > 0:
@@ -169,7 +166,10 @@ class MolMap():
         return ''.join(parts)
 
 
-    def generate_conventional_formula(self, atom_counts):
+    def generate_conventional_formula(
+            self, 
+            atom_counts
+            ):
         """
         Heuristic generator for conventional (human-friendly) formulas.
 
@@ -182,6 +182,11 @@ class MolMap():
         - Falls back to Hill ordering behavior when ambiguous.
 
         This is a heuristic and can be tuned by editing the two sets below.
+
+        Args:
+            atom_counts (dict): dict like {'H':2, 'C':1, 'N':6, 'O':4}  
+        Returns:
+            str: Conventional formula string, e.g. 'CH2N6O4' or 'H2O' or 'NH3'.
         """
         if not atom_counts or sum(atom_counts.values()) == 0:
             return ""
@@ -223,7 +228,21 @@ class MolMap():
         if h_count > 0:
             parts.append('H' if h_count == 1 else f'H{h_count}')
         return ''.join(parts)
-    def search_mol_wt_chem_formula(self, chem_formula_dict):
+    
+    def search_mol_wt_chem_formula(
+            self, 
+            chem_formula_dict
+            ):
+        """
+        Search for molecules based on the chemical formula derived from the descriptor dictionary.
+
+        Args:
+            chem_formula_dict (dict): Dictionary containing atom counts.
+        
+        Returns:
+            list: List of SMILES strings that match the chemical formula.
+        """
+        # Generate the target chemical formula using the conventional formula generator
         # print (f"chem_formula_dict: {chem_formula_dict}")
         # C_count = chem_formula_dict["C_count"]
         # H_count = chem_formula_dict["H_count"]
@@ -269,12 +288,25 @@ class MolMap():
         filtered_smiles = self.find_cid_from_formula(target_formula)
         return filtered_smiles
 
-    def Des2MolMap(self,probe_pt_des_dict, remain_des_prop_dict):
+    def Des2MolMap(
+            self,
+            probe_pt_des_dict, 
+            remain_des_prop_dict
+            ):
+        """
+        Maps descriptors to molecules.
+
+        Args:
+            probe_pt_des_dict (dict): The descriptor dictionary for the probe point.
+            remain_des_prop_dict (dict): The descriptor dictionary for the remaining points.
+
+        Returns:
+            None: Updates the class attributes with the best matching molecule and its properties.
+        """
         self.remain_des_prop_dict = remain_des_prop_dict
         remain_smi_ls = [key for key in self.remain_des_prop_dict.keys() if key != "GC_des_parameters" and key != "SMILES"]
         atom_guess_dict = self.ChemFormula(probe_pt_des_dict)
-        # print (f"atom_guess_dict: {atom_guess_dict}")
-        import itertools
+        
         # Generate all combinations by taking one element from each list
         # Build the list of lists in the same order as self.atom_ls so the
         # resulting tuples align with self.atom_count_keys.
@@ -283,15 +315,11 @@ class MolMap():
         smiles_ls = []
         for comb_i in all_combinations:
             comb_dict = dict(zip(self.atom_count_keys, comb_i))
-            # print (f"comb_dict: {comb_dict}")
             filtered_smi_i = self.search_mol_wt_chem_formula(comb_dict)
-            # print (f"filtered_smi_i: {filtered_smi_i}")
             if len(filtered_smi_i) > 0:
                 smiles_ls+=list(filtered_smi_i)
             
         self.smiles_ls = list(smiles_ls)
-        print (f"self.smiles_ls: {self.smiles_ls}")
-        print (f"Number of SMILES found: {len(self.smiles_ls)}")
         remain_smi_ls = [key for key in self.remain_des_prop_dict.keys() if key != "GC_des_parameters" and key != "SMILES"]
         if len(self.smiles_ls)!= 0:
             cadidate_ls = []
@@ -308,29 +336,28 @@ class MolMap():
             target_val_vector = list(probe_pt_des_dict.values())#list(target_point.values())
         else:
             cadidate_arr =[]
+        # If there are candidate molecules, find the closest one to the target descriptor vector
         if np.shape(cadidate_arr)[0] != 0:
+            print (f"Found {np.shape(cadidate_arr)[0]} candidate molecules for the target descriptor vector.")
             tree = scipy.spatial.KDTree(cadidate_arr)
             min_dist, min_idx =  tree.query(target_val_vector)
             self.min_dist = min_dist
             self.min_idx = min_idx
-            # print ("min_dist:", min_dist)
-            # print ("min_dist:", min_idx)
-            # print ("cadidate_arr[min_idx,:]", cadidate_arr[min_idx,:])
             test_dist = math.dist(cadidate_arr[min_idx,:],target_val_vector)
-            # print (f"test_dist: {test_dist}")
             best_smiles = list(cadidate_dict.keys())[self.min_idx]
             best_des_dict = cadidate_dict[best_smiles][0]
             best_prop = cadidate_dict[best_smiles][1]
             remain_des_prop_dict.pop(best_smiles)
             
-            abs_err = abs(best_prop*self.hartree2kcalmol_constant-self.target_prop_val*self.hartree2kcalmol_constant)
+            abs_err = abs(best_prop*self.kcalmol_constant-self.target_prop_val*self.kcalmol_constant)
             self.abs_err = abs_err
             self.best_des_dict = best_des_dict
             self.remain_des_prop_dict = remain_des_prop_dict
             self.composition_guess = all_combinations
             self.best_smiles = best_smiles
         else:
-            # print ("No Candidate")
+            print ("No candidate molecules found for the target descriptor vector.")
+            # If no candidate molecules are found, set the best SMILES to "None" and use the maximum absolute error
             self.abs_err = self.max_abs_err
             self.best_des_dict = probe_pt_des_dict
             self.remain_des_prop_dict = remain_des_prop_dict
@@ -338,27 +365,71 @@ class MolMap():
             self.best_smiles = "None"
         
             
-    def gaussian_pdf(self, x, mu, sigma):
+    def gaussian_pdf(
+            self, 
+            x, 
+            mu, 
+            sigma
+            ):
+        """
+        Calculate the Gaussian probability density function (PDF) value for a given x, mean (mu), and standard deviation (sigma).
+
+        Args:
+            x (float): The value for which to calculate the PDF.
+            mu (float): The mean of the Gaussian distribution.
+            sigma (float): The standard deviation of the Gaussian distribution.
+        Returns:
+            float: The PDF value at x.
+        """
         return (1 / (sigma * math.sqrt(2 * math.pi))) * math.exp(-((x - mu)**2) / (2 * sigma**2))
 
-    def prob_atom_count(self, atom_type, value, sigma=4):
+    def prob_atom_count(
+            self, 
+            atom_type, 
+            value, 
+            sigma=4
+            ):
+        """
+        Calculate the posterior probabilities of atom counts for a given atom type based on the inner product value.
+
+        Args:
+            atom_type (str): The type of atom (e.g., "C", "H", "O").
+            value (float): The inner product value for the atom type.
+            sigma (float): The standard deviation for the Gaussian PDF (default: 4).    
+
+        Returns:
+            tuple: A tuple containing two lists:
+                - List of atom counts sorted by their posterior probabilities (from smallest to largest).
+                - List of corresponding posterior probabilities sorted in the same order.
+        """
         # Likelihoods
-        likelihoods = np.array([self.gaussian_pdf(value, self.atom_cum_pdf_dict["f_atom_inner_prod"][idx], 
-                                            sigma) 
+        # print (f"atom_type: {atom_type}, value: {value}, sigma: {sigma}")
+        # print (f"self.atom_cum_pdf_dict['atom_type']: {self.atom_cum_pdf_dict['atom_type']}")
+        likelihoods = np.array([self.gaussian_pdf(
+            value, 
+            self.atom_cum_pdf_dict["f_atom_inner_prod"][idx], 
+            sigma) 
+            for idx, atom_i in enumerate(self.atom_cum_pdf_dict["atom_type"]) 
+            if atom_i == atom_type])
+        # print (f"likelihoods: {likelihoods}")
+        # print (f"len(likelihoods): {len(likelihoods)}")
+        if len(likelihoods) == 0:
+            return [], []
+        else:
+            # prior probability
+            p = 1/(len(likelihoods))
+            posterior_denominator  = np.sum(np.array([f*p for f in likelihoods]))
+            posterior = np.array([(f * p) / (posterior_denominator) for f in likelihoods])
+            # sort calculated posterior from smallest to biggest
+            idx_sort = np.argsort(posterior)
+            # get the corresponding atom counts and posterior probabilities in sorted order
+            inner_prod_count_arr = np.array([self.atom_cum_pdf_dict ["atom_count"][idx]
                                             for idx, atom_i in enumerate(self.atom_cum_pdf_dict["atom_type"]) 
                                             if atom_i == atom_type])
-        # prior probability
-        p = 1/(len(likelihoods))
-        posterior_denominator  = np.sum(np.array([f*p for f in likelihoods]))
-        posterior = np.array([(f * p) / (posterior_denominator) for f in likelihoods])
-        # sort calculated posterior from smallest to biggest
-        idx_sort = np.argsort(posterior)
-        inner_prod_count_arr = np.array([self.atom_cum_pdf_dict ["atom_count"][idx]
-                                        for idx, atom_i in enumerate(self.atom_cum_pdf_dict["atom_type"]) 
-                                        if atom_i == atom_type])
-        # return the 
-        return [inner_prod_count_arr[i] for i in idx_sort], [posterior[i] for i in idx_sort]
-        # return posterior
+
+            # print (f"inner_prod_count_arr: {inner_prod_count_arr}")
+            # print (f"posterior: {posterior}")
+            return [inner_prod_count_arr[i] for i in idx_sort], [posterior[i] for i in idx_sort]
     
 
         

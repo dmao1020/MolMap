@@ -115,6 +115,11 @@ def max_atom_counts(
             max_n_atoms = solve_n_for_amine(target=max_MW)
             # print (f"Maximum number of {atom_type} atoms in an amine with MW <= {max_MW}: {max_n_atoms}")
             estmated_max_counts[atom_type] = math.ceil(max_n_atoms)
+        elif atom_type == "F":
+            # For fluorine, we can use a general estimate based on atomic weight
+            max_n_atoms = max_MW / atomic_weight
+            # print (f"Maximum number of {atom_type} atoms for MW <= {max_MW}: {max_n_atoms}")
+            estmated_max_counts[atom_type] = math.ceil(max_n_atoms)
         else:
             print (f"Atom type {atom_type} not specifically handled, using a general estimate based on atomic weight.")
     return estmated_max_counts

@@ -36,9 +36,9 @@ def return_hartree2kcalmol_constant(prop_n):
         return 627.509474
     
 def return_kcalmol(unit):
-    if unit == "hartree":
+    if unit == "hartree" or unit == "Hartree":
         return 627.509474
-    elif unit == "hartree_K":
+    elif unit == "hartree_K" or unit == "Hartree_K":
         return 627.509474*298.15
     elif unit == "eV":
         return 23.06031

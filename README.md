@@ -2,7 +2,7 @@
 ## Overview
 This repository contains the code and data used to generate the results presented in the manuscript:
 **Bayesian Optimization in Chemical Compound Sub-Spaces using
-Low-Dimensional Molecular Descriptors** Yun-Wen Mao and Roman V Krems
+Low-Dimensional Molecular Descriptors** by Yun-Wen Mao and Roman V Krems
 
 The repository is intended to facilitate reproducibility of the results presented in the manuscript.
 It inclludes the Bayesian optimization workflows, the inverse mapping algorithm, and data of the figures in the manuscript.
