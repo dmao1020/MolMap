@@ -11,9 +11,13 @@ It inclludes the Bayesian optimization workflows, the inverse mapping algorithm,
 .
 
 ├── mapping.py # Mapping from descriptor vector to chemical formula
+
 ├── atom_pdf.py # Calculating the reference atomic probability distribution in Eq. (14) of the manuscript
+
 ├── figures/ # data used to generate figures
+
 ├── requirements.txt # Python dependencies 
+
 └── README.md
 
 ## Requirements
