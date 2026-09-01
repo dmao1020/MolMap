@@ -8,17 +8,16 @@ The repository is intended to facilitate reproducibility of the results presente
 It inclludes the Bayesian optimization workflows, the inverse mapping algorithm, and data of the figures in the manuscript.
 
 ## Repository structure
-.
+```.
 
 ├── mapping.py # Mapping from descriptor vector to chemical formula
 
 ├── atom_pdf.py # Calculating the reference atomic probability distribution in Eq. (14) of the manuscript
 
 ├── figures/ # data used to generate figures
-
 ├── requirements.txt # Python dependencies 
-
 └── README.md
+```
 
 ## Requirements
 The code was developed and tested with Python 3.11.
