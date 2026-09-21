@@ -48,11 +48,6 @@ elif dataset_n == "pubchemQC":
     max_MW = 300
     atom_ls = ["H", "C", "N", "O"]
 ################# file reading directory ##########################
-sockeye_dir = "/scratch/st-rkrems-1/ymaoai/"
-compute_can_dir = "/scratch/dmao1020/"
-purple_mac_dir = "/Users/dawnmao/"
-m4_mac_dir = "/Users/dawn_mao/"
-
 current_dir =  os.getcwd()+"/"
 data_dir = f"{current_dir}/data/{dataset_n}/"
 
@@ -141,9 +136,7 @@ task_id, round_id = task_id_ls[task_id_]
 print ("task_id:", task_id, "round_id:", round_id)
 print ("target_dict[prop_n]:", np.array(target_dict[prop_n]))
 target_prop_val = target_dict[prop_n][task_id]#float(np.max(des_prop_dict[prop_n]))
-# target_dsgdb9nsd = target_dict["dsgdb9nsd"][task_id]
 target_smi = target_dict["SMILES"][task_id]
-# cid = find_cid_from_smiles(target_smi)
 print (f"target_smi: {target_smi}, target_prop_val: {target_prop_val}")
 print (des_prop_dict[target_smi])
 cid = des_prop_dict[target_smi][2]
@@ -341,17 +334,13 @@ else:
     for point in lhs_samples:
         # print ("point:", point)
         next_point_to_probe = dict(zip(keys, point))
-        # print ("next_point_to_probe:", next_point_to_probe)
         # output of next_point 
         MolMap_util.Des2MolMap(
             next_point_to_probe,
             remain_des_prop_dict
             )
-        # print (f"bo_result: {MolMap_util}")
-        # print ("bo_result.abs_err:",MolMap_util.abs_err)
         target = -1 * MolMap_util.abs_err
         if target > -epsilon_val:
-            # print ("Target value is too high, skip this point!")
             continue
         else:
             # print ("bbf_util:", bbf_util)
