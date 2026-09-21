@@ -44,13 +44,19 @@ def return_kcalmol(unit):
         return 23.06031
     
 def Coulomb_matrix(coord_array, z_ls):
-    num_atoms = len(z_ls)
-    CM = np.zeros((num_atoms, num_atoms))
-    for i in range(num_atoms):
-        for j in range(num_atoms):
-            if i == j:
-                CM[i, j] = 0.5 * z_ls[i] ** 2.4
-            else:
-                distance = np.linalg.norm(coord_array[i] - coord_array[j])
-                CM[i, j] = (z_ls[i] * z_ls[j]) / distance
+    coord_array = np.asarray(coord_array, dtype=float)
+    z_ls = np.asarray(z_ls, dtype=float)
+
+    # Pairwise coordinate differences: shape (num_atoms, num_atoms, 3)
+    differences = coord_array[:, None, :] - coord_array[None, :, :]
+    distances = np.linalg.norm(differences, axis=-1)
+
+    # Avoid division by zero on the diagonal
+    np.fill_diagonal(distances, np.inf)
+
+    CM = np.outer(z_ls, z_ls) / distances
+
+    # Diagonal terms
+    np.fill_diagonal(CM, 0.5 * z_ls ** 2.4)
+
     return CM
