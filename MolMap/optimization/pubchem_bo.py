@@ -97,8 +97,6 @@ smi_ls = target_dict["SMILES"]
 # print (smi_ls)
 task_id_ls_ = np.arange(len(smi_ls))
 # %%
-
-
 # Number of rounds of testing for building statistics
 n_tests = 10
 task_id_ls = []
