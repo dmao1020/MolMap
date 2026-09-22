@@ -23,17 +23,24 @@ from MolDes import GCT_util, CM_util # importing MolDes package
 
 
 # Retrieve the path to the PM6 CID file
-_PM6_CIDS_PATH = (
+_PM6_CIDS_DIR = (
     Path(__file__).resolve().parent
     / "optimization"
     / "data"
     / "pubchemQC"
-    / "pm6_cids.npy"
 )
-if not _PM6_CIDS_PATH.is_file():
-    raise FileNotFoundError(f"PM6 CID file not found: {_PM6_CIDS_PATH}")
+_PM6_CIDS_PATH = _PM6_CIDS_DIR / "pm6_cids.npz"
+_LEGACY_PM6_CIDS_PATH = _PM6_CIDS_DIR / "pm6_cids.npy"
+if not _PM6_CIDS_PATH.is_file() and not _LEGACY_PM6_CIDS_PATH.is_file():
+    raise FileNotFoundError(
+        f"PM6 CID file not found: {_PM6_CIDS_PATH} or {_LEGACY_PM6_CIDS_PATH}"
+    )
 
-_pm6_cids = np.load(_PM6_CIDS_PATH, allow_pickle=True)
+if _PM6_CIDS_PATH.is_file():
+    with np.load(_PM6_CIDS_PATH, allow_pickle=False) as _pm6_cids_archive:
+        _pm6_cids = _pm6_cids_archive["pm6_cids"]
+else:
+    _pm6_cids = np.load(_LEGACY_PM6_CIDS_PATH, allow_pickle=False)
 if _pm6_cids.shape == ():
     _pm6_cids = _pm6_cids.item()
 PM6_CID_SET = {int(cid) for cid in _pm6_cids}
