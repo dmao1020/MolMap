@@ -88,7 +88,7 @@ train_fn = f"{data_dir}graph_size_data/qm9_mol_size_split_train.npy"
 qm9_mol_size_split_train_dict = np.load(train_fn, allow_pickle=True)[()]
 
 ##### file saving directory ##### 
-save_result_dir = create_dir("results/")
+save_result_dir = create_dir("qm9_results/")
 print ("save_result_dir:", save_result_dir)
 
 ##### Acquisition function setting ##### 
@@ -232,6 +232,7 @@ else:
                 optimizer.register(params=real_next_point, target=target)
                 bo_pt_ls.append(target)
                 bo_itr_dict["bo_pt_ls"] = bo_pt_ls
+
     # ----------------------------
     # Feed LHS samples into optimizer
     print ("Feeding LHS samples into optimizer...")
@@ -240,7 +241,7 @@ else:
         print ("next_point_to_probe:", next_point_to_probe)
         print (next_point_to_probe.keys())
         # output of next_point 
-        MolMap_util.Des2MolMap(
+        MolMap_util.Des2MolMap_QM9(
             next_point_to_probe,
             remain_des_prop_dict
             )
@@ -279,7 +280,7 @@ for _ in range(bo_n_itr):
         best_kernel = optimizer._gp.kernel_  # Store optimized kernel
         
     # output of next_point 
-    MolMap_util.Des2MolMap(
+    MolMap_util.Des2MolMap_QM9(
         next_point_to_probe,
         remain_des_prop_dict
         )

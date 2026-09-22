@@ -47,10 +47,12 @@ if dataset_n == "qm9":
 elif dataset_n == "pubchemQC":
     max_MW = 300
     atom_ls = ["H", "C", "N", "O"]
+
+pcp_method_status = True
 ################# file reading directory ##########################
 current_dir =  os.getcwd()+"/"
-data_dir = f"{current_dir}/data/{dataset_n}/"
-
+data_dir = f"{current_dir}data/{dataset_n}/"
+print ("data_dir:", data_dir)
 # loading the des_prop_dict
 # descriptor and property dictionary for all the molecules in the dataset
 # with the format of {smi: [des, prop]}
@@ -118,19 +120,6 @@ elif prop_n == "alpha_gap":
 else: 
     max_abs_err = 5000
     epsilon_val = 1
-
-#%%
-# import pubchempy as pcp
-
-
-# def pcp_find_cid_from_smiles(smi):
-#     results = pcp.get_compounds(smi, 'smiles')
-#     if results:
-#         cid = results[0].cid
-#         return cid
-#     else:
-#         print("No compound found.")
-#         return None
     
 task_id, round_id = task_id_ls[task_id_]
 print ("task_id:", task_id, "round_id:", round_id)
@@ -157,7 +146,6 @@ mol_size_split_train_dict = np.load(train_fn, allow_pickle=True)[()]
 # print (mol_size_split_train_dict)
 save_result_dir = create_dir(f"{current_dir}{dataset_n}_bo_result/")
 save_result_dir = create_dir(f"{save_result_dir}{prop_n}/")
-# print ("save_result_dir:", save_result_dir)
 # %%
 ##### Acquisition function setting ##### 
 if acq_dict["acq_type"] == "ucb":
@@ -165,9 +153,123 @@ if acq_dict["acq_type"] == "ucb":
 elif acq_dict["acq_type"] == "ei":
     acq = acquisition.ExpectedImprovement(xi=acq_dict["xi_val"])#acquisition.UpperConfidenceBound(kappa=2.5)#
 
-# save_file_n = "%slocaltest_MolMap_result_round%s.npy"%(save_result_dir, round_id)#TODO hash for sockeye
-save_file_n = "%sMolMap_result_round%s.npy"%(save_result_dir, round_id+1)#TODO unhash for sockeye
+save_file_n = "%sresult.npy"%(save_result_dir)
 print (f"save_file_n: {save_file_n}")
+#%%
+# Load the PM6 extractor
+# Initialize PM6DatabaseClient and PM6DatasetExtractor, with robust environment detection for HPC compatibility
+from b3lyp_pm6_dataset import PM6DatabaseClient, PM6DatasetExtractor, PM6Entry
+
+import os
+import shutil
+import subprocess
+import inspect
+
+print("Testing PM6DatasetExtractor...")
+print("Initializing PM6DatabaseClient and PM6DatasetExtractor...")
+
+# Environment-configurable values (set these on HPC if needed)
+container_id = os.environ.get("PM6_CONTAINER_ID", "").strip()
+docker_file_path = os.environ.get(
+    "PM6_DOCKER_COMPOSE",
+    "/Users/dawn_mao/Desktop/PhD_research/Dataset/pm6_dataset/b3lyp_pm6_dataset/docker-compose.yml",
+)
+pm6_db_path = os.environ.get("PM6_DB_PATH", "").strip()
+
+# Helper: try docker-compose or 'docker compose'
+if not container_id:
+    if shutil.which("docker-compose"):
+        compose_cmd = ["docker-compose"]
+    elif shutil.which("docker"):
+        compose_cmd = ["docker", "compose"]
+    else:
+        compose_cmd = None
+
+    if compose_cmd is not None:
+        try:
+            result = subprocess.check_output(
+                compose_cmd + ["-f", docker_file_path, "ps", "-q", "db"],
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+            container_ids = [line for line in result.splitlines() if line.strip()]
+            if container_ids:
+                container_id = container_ids[-1]
+        except subprocess.CalledProcessError:
+            # ignore and allow other fallbacks
+            pass
+
+# If docker unavailable, attempt to locate likely DB directories
+found_paths = []
+search_candidates = [
+    pm6_db_path,
+    "/Users/dawn_mao/Desktop/PhD_research/Dataset/pm6_dataset/",
+    os.path.expanduser("~"),
+]
+for cand in search_candidates:
+    if cand and os.path.exists(cand):
+        # check for postgres/base subfolder used earlier
+        for root, dirs, files in os.walk(cand):
+            if "postgresql" in root.lower() or "pm6_dataset" in root.lower():
+                found_paths.append(root)
+            # limit walk depth to avoid long searches
+            if len(found_paths) >= 5:
+                break
+        if len(found_paths) >= 5:
+            break
+
+# Try to instantiate PM6DatabaseClient with a few constructor options detected dynamically
+client = None
+client_errors = []
+
+sig = inspect.signature(PM6DatabaseClient)
+param_names = set(sig.parameters.keys())
+
+# Try container_id constructor if supported
+if "container_id" in param_names and container_id:
+    try:
+        client = PM6DatabaseClient(container_id=container_id)
+    except Exception as e:
+        client_errors.append(("container_id", str(e)))
+
+# Try db path style constructors with common parameter names
+if client is None and found_paths:
+    for path_try in found_paths:
+        for key in ("db_path", "data_dir", "db_dir", "base_dir", "postgres_dir"):
+            if key in param_names:
+                try:
+                    client = PM6DatabaseClient(**{key: path_try})
+                    break
+                except Exception as e:
+                    client_errors.append((key, str(e)))
+        if client is not None:
+            break
+
+# Try PM6DatabaseClient with no-arg constructor as a last resort
+if client is None:
+    try:
+        client = PM6DatabaseClient()
+    except Exception as e:
+        client_errors.append(("no_args", str(e)))
+
+if client is None:
+    msg_lines = [
+        "Unable to create PM6DatabaseClient from this environment.",
+        "Tried methods: container_id (env PM6_CONTAINER_ID), docker-compose/docker compose,",
+        "automatic filesystem search for pm6/postgresql paths, and no-arg constructor.",
+        "", 
+        "Hints to fix on HPC:",
+        " - If a DB container is running and you can access Docker, set PM6_CONTAINER_ID to its ID.",
+        " - If the database files exist on disk, set PM6_DB_PATH to the directory containing the DB (PM6_DB_PATH=/path/to/pm6_dataset/data/...).",
+        " - Alternatively, run this notebook on a machine with Docker Compose available.",
+        "",
+        "Paths inspected:\n" + "\n".join(found_paths[:10]),
+        "Errors encountered:\n" + "\n".join([f"{k}: {v}" for k, v in client_errors[:10]])
+    ]
+    raise RuntimeError("\n".join(msg_lines))
+
+# If we reach here, client was created
+pm6_extractor = PM6DatasetExtractor(client)
+print(f"Using PM6 client: {client}")
 
 #%%
 # import importlib
@@ -184,6 +286,11 @@ MolMap_util = mapping.MolMap(
     max_abs_err = max_abs_err,
     atom_ls= atom_ls,
     max_MW = max_MW,
+    # Use the local pubchemQC descriptor dictionary during BO.
+    # The online PubChem API is optional and can time out.
+    pcp_method=pcp_method_status,
+    extractor = pm6_extractor,
+    unit = "eV"
     )
 
 print (des_bounds_dict)
@@ -230,7 +337,10 @@ if os.path.isfile(save_file_n):
 
     SMILES_ls = bo_itr_dict["SMILES_ls"]
     bo_pt_ls = []
-    remain_des_prop_dict = des_prop_dict.copy()
+    if pcp_method_status == False:
+        remain_des_prop_dict = des_prop_dict.copy()
+    else:
+        remain_des_prop_dict = None
 
     for idx, smi in enumerate(SMILES_ls):
         # print ("point index:", idx)
@@ -241,7 +351,8 @@ if os.path.isfile(save_file_n):
 
         # update dataframe of the remaining data points
         if smi!= "None":
-            remain_des_prop_dict.pop(smi)
+            if pcp_method_status == False:
+                remain_des_prop_dict.pop(smi)
     bo_itr_dict["bo_pt_ls"] = bo_pt_ls
 else:
     print ("Initialize BO with LHS")
@@ -258,7 +369,10 @@ else:
     lhs_samples = qmc.scale(lhs_samples_unit, bounds[:, 0], bounds[:, 1])
 
     # print (lhs_samples)
-    remain_des_prop_dict = des_prop_dict.copy()
+    if pcp_method_status == False:
+        remain_des_prop_dict = des_prop_dict.copy()
+    else:
+        remain_des_prop_dict = None
 
 
     # Set up BO optimizer
@@ -316,7 +430,6 @@ else:
             random_smi = np.random.choice(clean_smi_ls, size=1, replace=False)[0]
             real_next_point = des_prop_dict[random_smi][0]
             bo_itr_dict["added_point"].append(real_next_point)
-
             prop_val = des_prop_dict[random_smi][1][prop_n]
             print (f"Property value of the selected molecule: {prop_val}")
             target = -1 * abs(prop_val - target_prop_val)
@@ -335,7 +448,7 @@ else:
         # print ("point:", point)
         next_point_to_probe = dict(zip(keys, point))
         # output of next_point 
-        MolMap_util.Des2MolMap(
+        MolMap_util.Des2MolMap_pm6(
             next_point_to_probe,
             remain_des_prop_dict
             )
@@ -385,7 +498,7 @@ for _ in range(bo_n_itr):
     print(f"kernel.theta: {optimizer._gp.kernel_.theta}")
     # print (f"next_point: {next_point_to_probe}")
     # output of next_point 
-    MolMap_util.Des2MolMap(
+    MolMap_util.Des2MolMap_pm6(
         next_point_to_probe,
         remain_des_prop_dict
         )
@@ -418,5 +531,4 @@ for _ in range(bo_n_itr):
         print (f"BO result: {bo_smi}; {prop_n} = {round(bo_prop_val * kcalmol_constant, 2)} kcal/mol")
         
         break
-
-# %%
+#%%
